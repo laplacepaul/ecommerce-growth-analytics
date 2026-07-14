@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Environment variables
+.env
+
+# Local datasets
+data/source/
+data/raw/
+data/staging/
+data/processed/
+data/generated/
+
+# Database backup files
+*.sql.bak
