@@ -651,3 +651,592 @@ SELECT
     'Negative Review Rate (%)',
     ROUND(negative_review_percent, 2)::TEXT
 FROM review_kpis;
+
+
+-- ============================================================
+-- Customer Analytics
+-- Business Question 13
+-- Who are the highest-value customers?
+-- ============================================================
+
+SELECT
+    customer_unique_id,
+    total_customer_orders,
+
+    ROUND(
+        customer_total_revenue,
+        2
+    ) AS lifetime_revenue,
+
+    ROUND(
+        customer_average_order_value,
+        2
+    ) AS average_order_value,
+
+    customer_lifetime_days,
+
+    DENSE_RANK() OVER (
+        ORDER BY customer_total_revenue DESC
+    ) AS customer_rank
+
+FROM analytics.dim_customer
+
+WHERE customer_total_revenue IS NOT NULL
+
+ORDER BY
+    customer_total_revenue DESC
+
+LIMIT 20;
+
+
+-- ============================================================
+-- Customer Analytics
+-- Business Question 14
+-- What percentage of customers are repeat customers?
+-- ============================================================
+
+SELECT
+
+    COUNT(customer_unique_id) AS total_customers,
+
+    SUM(repeat_customer) AS repeat_customers,
+
+    COUNT(customer_unique_id) - SUM(repeat_customer)
+        AS one_time_customers,
+
+    ROUND(
+        (
+            SUM(repeat_customer)::NUMERIC
+            /
+            COUNT(customer_unique_id)
+        ) * 100,
+        2
+    ) AS repeat_customer_percent,
+
+    ROUND(
+        (
+            (
+                COUNT(customer_unique_id)
+                - SUM(repeat_customer)
+            )::NUMERIC
+            /
+            COUNT(customer_unique_id)
+        ) * 100,
+        2
+    ) AS one_time_customer_percent
+
+FROM analytics.dim_customer;
+
+
+-- ============================================================
+-- Customer Analytics
+-- Business Question 15
+-- Do repeat customers spend more than one-time customers?
+-- ============================================================
+
+SELECT
+
+    CASE
+        WHEN repeat_customer = 1
+            THEN 'Repeat Customer'
+        ELSE 'One-Time Customer'
+    END AS customer_type,
+
+    COUNT(*) AS total_customers,
+
+    ROUND(
+        AVG(customer_total_revenue),
+        2
+    ) AS average_customer_revenue,
+
+    ROUND(
+        AVG(customer_average_order_value),
+        2
+    ) AS average_order_value,
+
+    ROUND(
+        AVG(total_customer_orders),
+        2
+    ) AS average_orders_per_customer
+
+FROM analytics.dim_customer
+
+GROUP BY repeat_customer
+
+ORDER BY repeat_customer DESC;
+
+
+-- ============================================================
+-- Product Analytics
+-- Business Question 16
+-- Which product categories have the highest average selling price?
+-- ============================================================
+
+-- Business Purpose:
+-- Identify premium product categories based on the typical
+-- selling price of products purchased within each category.
+
+SELECT
+    product_category_name,
+
+    COUNT(product_id) AS total_products,
+
+    ROUND(
+        SUM(total_units_sold)::NUMERIC,
+        0
+    ) AS total_units_sold,
+
+    ROUND(
+        (
+            SUM(total_product_revenue)
+            / NULLIF(SUM(total_units_sold)::NUMERIC, 0)
+        ),
+        2
+    ) AS weighted_average_selling_price,
+
+    ROUND(
+        SUM(total_product_revenue),
+        2
+    ) AS total_revenue,
+
+    DENSE_RANK() OVER (
+        ORDER BY
+            (
+                SUM(total_product_revenue)
+                / NULLIF(SUM(total_units_sold)::NUMERIC, 0)
+            ) DESC
+    ) AS average_price_rank
+
+FROM analytics.dim_product
+
+WHERE
+    product_category_name IS NOT NULL
+    AND total_units_sold > 0
+
+GROUP BY
+    product_category_name
+
+HAVING
+    SUM(total_units_sold) >= 20
+
+ORDER BY
+    weighted_average_selling_price DESC
+
+LIMIT 20;
+
+
+
+-- ============================================================
+-- Product Analytics
+-- Business Question 17
+-- Which product categories incur the highest freight cost per unit sold?
+-- ============================================================
+
+-- Business Purpose:
+-- Identify product categories with the highest
+-- weighted average freight cost per unit sold.
+
+SELECT
+    product_category_name,
+
+    ROUND(
+        SUM(total_units_sold)::NUMERIC,
+        0
+    ) AS total_units_sold,
+
+    ROUND(
+        SUM(total_freight_value),
+        2
+    ) AS total_freight_value,
+
+    ROUND(
+        (
+            SUM(total_freight_value)
+            /
+            NULLIF(
+                SUM(total_units_sold)::NUMERIC,
+                0
+            )
+        ),
+        2
+    ) AS weighted_average_freight_per_unit,
+
+    DENSE_RANK() OVER (
+        ORDER BY
+            (
+                SUM(total_freight_value)
+                /
+                NULLIF(
+                    SUM(total_units_sold)::NUMERIC,
+                    0
+                )
+            ) DESC
+    ) AS freight_cost_rank
+
+FROM analytics.dim_product
+
+WHERE
+    product_category_name IS NOT NULL
+    AND total_units_sold > 0
+
+GROUP BY
+    product_category_name
+
+HAVING
+    SUM(total_units_sold) >= 20
+
+ORDER BY
+    weighted_average_freight_per_unit DESC
+
+LIMIT 20;
+
+
+-- ============================================================
+-- Seller Analytics
+-- Business Question 18
+-- Which established sellers generate the highest revenue per order?
+-- ============================================================
+
+-- Business Purpose:
+-- Identify consistently active sellers with the highest
+-- average revenue generated per order.
+
+SELECT
+    seller_id,
+    seller_total_orders,
+
+    ROUND(
+        seller_total_revenue,
+        2
+    ) AS total_revenue,
+
+    ROUND(
+        seller_total_revenue
+        / NULLIF(seller_total_orders, 0),
+        2
+    ) AS revenue_per_order,
+
+    DENSE_RANK() OVER (
+        ORDER BY
+            seller_total_revenue
+            / NULLIF(seller_total_orders, 0) DESC
+    ) AS revenue_efficiency_rank
+
+FROM analytics.dim_seller
+
+WHERE
+    seller_total_orders >= 20
+
+ORDER BY
+    revenue_per_order DESC
+
+LIMIT 20;
+
+-- ============================================================
+-- Seller Analytics
+-- Business Question 19
+-- Which sellers have the highest freight cost per order?
+-- ============================================================
+
+SELECT
+
+    seller_id,
+
+    seller_total_orders,
+
+    ROUND(
+        seller_total_freight,
+        2
+    ) AS total_freight,
+
+    ROUND(
+        seller_total_freight
+        /
+        NULLIF(
+            seller_total_orders,
+            0
+        ),
+        2
+    ) AS freight_per_order,
+
+    DENSE_RANK() OVER(
+        ORDER BY
+            (
+                seller_total_freight
+                /
+                NULLIF(
+                    seller_total_orders,
+                    0
+                )
+            ) DESC
+    ) AS freight_rank
+
+FROM analytics.dim_seller
+
+ORDER BY
+    freight_per_order DESC
+
+LIMIT 20;
+
+
+-- ============================================================
+-- Logistics Analytics
+-- Business Question 20
+-- Which months have the highest late delivery rate?
+-- ============================================================
+
+SELECT
+
+    purchase_month_name,
+
+    COUNT(*) AS total_orders,
+
+    SUM(is_late_delivery) AS late_orders,
+
+    ROUND(
+        (
+            SUM(is_late_delivery)::NUMERIC
+            /
+            COUNT(*)
+        )*100,
+        2
+    ) AS late_delivery_rate
+
+FROM analytics.fact_orders
+
+GROUP BY
+    purchase_month_name
+
+ORDER BY
+    late_delivery_rate DESC;
+
+
+
+
+-- ============================================================
+-- Customer Satisfaction
+-- Business Question 21
+-- How quickly are customer reviews answered?
+-- ============================================================
+
+-- Business Purpose:
+-- Measure the average response time to customer reviews
+-- by review sentiment.
+
+SELECT
+
+    review_sentiment,
+
+    COUNT(*) AS total_reviews,
+
+    ROUND(
+        AVG(review_response_time_hours)::NUMERIC,
+        2
+    ) AS average_response_time_hours
+
+FROM analytics.dim_review
+
+WHERE
+    review_response_time_hours IS NOT NULL
+
+GROUP BY
+    review_sentiment
+
+ORDER BY
+    average_response_time_hours;
+
+
+    -- ============================================================
+-- Customer Satisfaction
+-- Business Question 22
+-- Review sentiment distribution
+-- ============================================================
+
+SELECT
+
+    review_sentiment,
+
+    COUNT(*) AS total_reviews,
+
+    ROUND(
+        COUNT(*)*100.0
+        /
+        SUM(COUNT(*)) OVER(),
+        2
+    ) AS percentage
+
+FROM analytics.dim_review
+
+GROUP BY
+    review_sentiment
+
+ORDER BY
+    total_reviews DESC;
+
+
+
+
+-- ============================================================
+-- Customer Satisfaction
+-- Business Question 23
+-- How many customers leave written reviews?
+-- ============================================================
+
+SELECT
+
+    CASE
+
+        WHEN has_written_comment=1
+
+        THEN 'Written Review'
+
+        ELSE 'Rating Only'
+
+    END AS review_type,
+
+    COUNT(*) AS total_reviews,
+
+    ROUND(
+        COUNT(*)*100.0
+        /
+        SUM(COUNT(*)) OVER(),
+        2
+    ) AS percentage
+
+FROM analytics.dim_review
+
+GROUP BY
+    has_written_comment;
+
+
+
+-- ============================================================
+-- Executive Analytics
+-- Business Question 24
+-- How much revenue comes from the Top 10 sellers?
+-- ============================================================
+
+WITH ranked_sellers AS (
+
+SELECT
+
+    seller_id,
+
+    seller_total_revenue,
+
+    DENSE_RANK() OVER(
+
+        ORDER BY seller_total_revenue DESC
+
+    ) AS seller_rank
+
+FROM analytics.dim_seller
+
+)
+
+SELECT
+
+    ROUND(
+        SUM(seller_total_revenue),
+        2
+    ) AS top10_revenue,
+
+    ROUND(
+        (
+            SUM(seller_total_revenue)
+            /
+            (
+                SELECT
+                    SUM(seller_total_revenue)
+                FROM analytics.dim_seller
+            )
+        )*100,
+        2
+    ) AS revenue_share_percent
+
+FROM ranked_sellers
+
+WHERE seller_rank<=10;
+
+
+
+-- ============================================================
+-- Executive Analytics
+-- Business Question 25
+-- How many sellers are required to generate at least 80%
+-- of total seller revenue?
+-- ============================================================
+
+-- Business Purpose:
+-- Measure seller revenue concentration using Pareto analysis.
+
+WITH seller_pareto AS (
+    SELECT
+        seller_id,
+        seller_total_revenue,
+
+        ROW_NUMBER() OVER (
+            ORDER BY seller_total_revenue DESC, seller_id
+        ) AS seller_rank,
+
+        SUM(seller_total_revenue) OVER (
+            ORDER BY seller_total_revenue DESC, seller_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS cumulative_revenue,
+
+        SUM(seller_total_revenue) OVER () AS total_revenue
+
+    FROM analytics.dim_seller
+
+    WHERE
+        seller_total_revenue IS NOT NULL
+        AND seller_total_revenue > 0
+),
+
+pareto_cutoff AS (
+    SELECT
+        seller_rank,
+        cumulative_revenue,
+        total_revenue,
+
+        cumulative_revenue
+        / NULLIF(total_revenue, 0) AS cumulative_share
+
+    FROM seller_pareto
+
+    WHERE
+        cumulative_revenue
+        / NULLIF(total_revenue, 0) >= 0.80
+
+    ORDER BY seller_rank
+
+    LIMIT 1
+)
+
+SELECT
+    seller_rank AS sellers_required,
+
+    ROUND(
+        cumulative_revenue,
+        2
+    ) AS cumulative_revenue,
+
+    ROUND(
+        cumulative_share * 100,
+        2
+    ) AS cumulative_revenue_percent,
+
+    ROUND(
+        (
+            seller_rank::NUMERIC
+            / (
+                SELECT COUNT(*)
+                FROM analytics.dim_seller
+                WHERE seller_total_revenue IS NOT NULL
+                  AND seller_total_revenue > 0
+            )
+        ) * 100,
+        2
+    ) AS seller_population_percent
+
+FROM pareto_cutoff;
